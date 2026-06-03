@@ -31,7 +31,7 @@ ESP32-CAM wake
 
 ## Hardware Architecture
 
-目前韌體可先使用 ESP32-CAM 自身 deep sleep。若要長時間續航，建議使用外部電源切斷模組。
+目前韌體預設使用 TPL5110 外部電源切斷模組與 RTC 時段守門。若沒有 TPL5110，請將 `EXTERNAL_POWER_CONTROL_ENABLED` 改成 `0`。若沒有 RTC，請將 `RTC_ENABLED` 與 `ACTIVE_WINDOW_ENABLED` 改成 `0`。
 
 ```text
 18650 battery pack

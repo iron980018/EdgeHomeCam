@@ -35,20 +35,27 @@
 #define SLEEP_AFTER_TASK_SEC 5UL
 #define PERIODIC_WAKE_INTERVAL_SEC 21600ULL
 #define SLEEP_WHEN_IDLE true
-#define EXTERNAL_POWER_CONTROL_ENABLED 0
+// Default hardware assumes TPL5110 is installed.
+// If you do not have TPL5110, change this line to:
+// #define EXTERNAL_POWER_CONTROL_ENABLED 0
+#define EXTERNAL_POWER_CONTROL_ENABLED 1
 #define POWER_DONE_PIN 14
 #define POWER_DONE_SIGNAL_MS 250UL
+// External deep-sleep wake is disabled because GPIO13 is used by RTC SCL.
+// If you do not have RTC and want ESP32 ext0 wake, change this to 1 and keep WAKEUP_PIN wired.
 #define DEEP_SLEEP_EXT_WAKEUP_ENABLED 0
 
-// Optional RTC time-window guard. Enable when DS3231 or PCF8523 is connected.
-// This keeps the camera from doing Wi-Fi/camera work outside the active window.
-#define RTC_ENABLED 0
+// Default hardware assumes an RTC is installed.
+// If you do not have RTC, change these two lines to 0:
+// #define RTC_ENABLED 0
+// #define ACTIVE_WINDOW_ENABLED 0
+#define RTC_ENABLED 1
 #define RTC_TYPE_DS3231 1
 #define RTC_TYPE_PCF8523 2
 #define RTC_TYPE RTC_TYPE_DS3231
 #define RTC_SDA_PIN 15
 #define RTC_SCL_PIN 13
-#define ACTIVE_WINDOW_ENABLED 0
+#define ACTIVE_WINDOW_ENABLED 1
 #define RTC_REQUIRED_FOR_ACTIVE_WINDOW 1
 #define ACTIVE_START_HOUR 8
 #define ACTIVE_END_HOUR 16
