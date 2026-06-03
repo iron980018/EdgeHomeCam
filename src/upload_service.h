@@ -9,5 +9,7 @@ class UploadService {
               int wifiRssi, String &imageUrl, String &errorCode);
 
  private:
-  String extractImageUrl(const String &body) const;
+  String telegramApiUrl() const;
+  String buildCaption(const String &capturedAt, float batteryVoltage, int wifiRssi) const;
+  String extractMessageId(const String &body) const;
 };

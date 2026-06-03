@@ -1,5 +1,6 @@
 #include "upload_service.h"
 
+#include <ctype.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include "config.h"
@@ -13,48 +14,32 @@ bool UploadService::upload(camera_fb_t *frame, const String &capturedAt,
   }
 
   WiFiClientSecure secureClient;
-  WiFiClient plainClient;
   HTTPClient http;
 
-  const bool isHttps = String(UPLOAD_URL).startsWith("https://");
-#if HTTP_ALLOW_INSECURE_TLS
+#if TELEGRAM_ALLOW_INSECURE_TLS
   secureClient.setInsecure();
 #endif
 
-  bool started = isHttps ? http.begin(secureClient, UPLOAD_URL)
-                         : http.begin(plainClient, UPLOAD_URL);
-  if (!started) {
-    errorCode = "UPLOAD_BEGIN_FAILED";
+  String url = telegramApiUrl();
+  if (!http.begin(secureClient, url)) {
+    errorCode = "TELEGRAM_BEGIN_FAILED";
     return false;
   }
 
-  http.setTimeout(UPLOAD_TIMEOUT_MS);
-
-  if (strlen(UPLOAD_API_KEY) > 0) {
-    http.addHeader("Authorization", String("Bearer ") + UPLOAD_API_KEY);
-  }
+  http.setTimeout(TELEGRAM_TIMEOUT_MS);
 
   String boundary = "----EdgeCamBoundary7MA4YWxkTrZu0gW";
   http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
 
   String head;
   head += "--" + boundary + "\r\n";
-  head += "Content-Disposition: form-data; name=\"device_id\"\r\n\r\n";
-  head += DEVICE_ID;
+  head += "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n";
+  head += TELEGRAM_CHAT_ID;
   head += "\r\n--" + boundary + "\r\n";
-  head += "Content-Disposition: form-data; name=\"captured_at\"\r\n\r\n";
-  head += capturedAt;
+  head += "Content-Disposition: form-data; name=\"caption\"\r\n\r\n";
+  head += buildCaption(capturedAt, batteryVoltage, wifiRssi);
   head += "\r\n--" + boundary + "\r\n";
-  head += "Content-Disposition: form-data; name=\"battery_voltage\"\r\n\r\n";
-  head += String(batteryVoltage, 2);
-  head += "\r\n--" + boundary + "\r\n";
-  head += "Content-Disposition: form-data; name=\"wifi_rssi\"\r\n\r\n";
-  head += String(wifiRssi);
-  head += "\r\n--" + boundary + "\r\n";
-  head += "Content-Disposition: form-data; name=\"firmware_version\"\r\n\r\n";
-  head += FIRMWARE_VERSION;
-  head += "\r\n--" + boundary + "\r\n";
-  head += "Content-Disposition: form-data; name=\"image\"; filename=\"capture.jpg\"\r\n";
+  head += "Content-Disposition: form-data; name=\"photo\"; filename=\"edgecam.jpg\"\r\n";
   head += "Content-Type: image/jpeg\r\n\r\n";
 
   String tail = "\r\n--" + boundary + "--\r\n";
@@ -63,7 +48,7 @@ bool UploadService::upload(camera_fb_t *frame, const String &capturedAt,
   uint8_t *body = static_cast<uint8_t *>(malloc(totalLength));
   if (!body) {
     http.end();
-    errorCode = "UPLOAD_OUT_OF_MEMORY";
+    errorCode = "TELEGRAM_OUT_OF_MEMORY";
     return false;
   }
 
@@ -77,31 +62,61 @@ bool UploadService::upload(camera_fb_t *frame, const String &capturedAt,
   String response = http.getString();
   http.end();
 
-  Serial.printf("Upload response code: %d\n", code);
+  Serial.printf("Telegram response code: %d\n", code);
   Serial.println(response);
 
   if (code < 200 || code >= 300) {
-    errorCode = "UPLOAD_FAILED";
+    errorCode = "TELEGRAM_SEND_FAILED";
     return false;
   }
 
-  imageUrl = extractImageUrl(response);
+  String messageId = extractMessageId(response);
+  imageUrl = messageId.length() > 0 ? String("telegram:message/") + messageId : "telegram:sent";
   return true;
 }
 
-String UploadService::extractImageUrl(const String &body) const {
-  const String key = "\"image_url\"";
+String UploadService::telegramApiUrl() const {
+  return String("https://api.telegram.org/bot") + TELEGRAM_BOT_TOKEN + "/sendPhoto";
+}
+
+String UploadService::buildCaption(const String &capturedAt, float batteryVoltage,
+                                   int wifiRssi) const {
+  String caption;
+  caption += "EdgeCam gas meter capture\n";
+  caption += "Device: ";
+  caption += DEVICE_ID;
+  caption += "\nTime: ";
+  caption += capturedAt;
+  caption += "\nBattery: ";
+  caption += String(batteryVoltage, 2);
+  caption += " V\nRSSI: ";
+  caption += String(wifiRssi);
+  caption += " dBm\nFirmware: ";
+  caption += FIRMWARE_VERSION;
+  return caption;
+}
+
+String UploadService::extractMessageId(const String &body) const {
+  const String key = "\"message_id\"";
   int keyIndex = body.indexOf(key);
   if (keyIndex < 0) {
     return "";
   }
 
   int colon = body.indexOf(':', keyIndex + key.length());
-  int firstQuote = body.indexOf('"', colon + 1);
-  int secondQuote = body.indexOf('"', firstQuote + 1);
-  if (colon < 0 || firstQuote < 0 || secondQuote < 0) {
+  if (colon < 0) {
     return "";
   }
 
-  return body.substring(firstQuote + 1, secondQuote);
+  int start = colon + 1;
+  while (start < body.length() && isspace(static_cast<unsigned char>(body[start]))) {
+    start++;
+  }
+
+  int end = start;
+  while (end < body.length() && isdigit(static_cast<unsigned char>(body[end]))) {
+    end++;
+  }
+
+  return body.substring(start, end);
 }

@@ -147,7 +147,7 @@ void loop() {
     captureRequested = false;
     CaptureResult result = captureAndUpload();
     if (!result.success) {
-      Serial.printf("Capture flow failed: %s\n", result.errorCode.c_str());
+      Serial.printf("Telegram delivery failed: %s\n", result.errorCode.c_str());
     }
 
     if (SLEEP_WHEN_IDLE) {

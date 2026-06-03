@@ -19,11 +19,14 @@
 #define BLYNK_CONNECT_TIMEOUT_MS 15000UL
 #define BLYNK_RUN_INTERVAL_MS 10UL
 
-// HTTP upload endpoint. Example:
-// https://example.com/api/v1/devices/gas-meter-cam-001/captures
-#define UPLOAD_URL "https://example.com/api/v1/devices/gas-meter-cam-001/captures"
-#define UPLOAD_API_KEY ""
-#define UPLOAD_TIMEOUT_MS 30000UL
+// Telegram Bot photo delivery
+// 1. Create a bot with @BotFather and paste the token here.
+// 2. Send a message to the bot, then read chat_id from:
+//    https://api.telegram.org/bot<token>/getUpdates
+#define TELEGRAM_BOT_TOKEN "YOUR_TELEGRAM_BOT_TOKEN"
+#define TELEGRAM_CHAT_ID "YOUR_TELEGRAM_CHAT_ID"
+#define TELEGRAM_TIMEOUT_MS 30000UL
+#define TELEGRAM_ALLOW_INSECURE_TLS true
 
 // Power behavior
 #define COMMAND_WINDOW_MS 120000UL
@@ -44,6 +47,3 @@
 #define BATTERY_ADC_ENABLED false
 #define BATTERY_DIVIDER_RATIO 2.0f
 #define LOW_BATTERY_VOLTAGE 3.45f
-
-// Set to true when your server uses a test/self-signed TLS certificate.
-#define HTTP_ALLOW_INSECURE_TLS false
