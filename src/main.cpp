@@ -104,7 +104,7 @@ void setup() {
   Serial.println("EdgeCam booting");
 
   power.begin();
-  BlynkApp.setCallbacks(requestCapture, requestSleep, requestReboot, setFlash);
+  BlynkApp.setCallbacks(requestCapture, requestSleep, requestReboot);
 
   if (power.isLowBattery()) {
     Serial.println("Low battery, sleeping");

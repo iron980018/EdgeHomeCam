@@ -12,7 +12,7 @@
 - Blynk 狀態、Telegram 訊息標記、電池電壓、RSSI、錯誤碼回報
 - 拍照成功後自動將 `need_picture` 改回 `false`
 - 拍照或傳送失敗時保留 `need_picture=true`，下次醒來可再重試
-- 補光 LED 控制
+- 拍照時自動開啟補光 LED，拍完自動關閉
 - Deep Sleep 低功耗模式
 - 定時醒來後同步 Blynk 狀態
 - 本地按鍵/外部腳位喚醒後可自動拍照
@@ -76,7 +76,6 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getUpdates
 | V5 | Device -> App | `wifi_rssi` | Wi-Fi RSSI |
 | V6 | Device -> App | `error_code` | 錯誤碼 |
 | V7 | App -> Device | `sleep_now` | 立即睡眠，送 `1` |
-| V8 | App -> Device | `flash_enabled` | 補光手動控制，`0`/`1` |
 | V9 | App -> Device | `reboot` | 重啟裝置，送 `1` |
 
 ## Telegram 接口格式

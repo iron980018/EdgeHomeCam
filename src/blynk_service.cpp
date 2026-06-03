@@ -50,11 +50,10 @@ void BlynkService::clearNeedPicture() {
 }
 
 void BlynkService::setCallbacks(CaptureCallback capture, SleepCallback sleep,
-                                RebootCallback reboot, FlashCallback flash) {
+                                RebootCallback reboot) {
   captureCallback_ = capture;
   sleepCallback_ = sleep;
   rebootCallback_ = reboot;
-  flashCallback_ = flash;
 }
 
 void BlynkService::publishStatus(DeviceStatus status) {
@@ -107,12 +106,6 @@ void BlynkService::handleRebootCommand() {
   }
 }
 
-void BlynkService::handleFlashCommand(bool enabled) {
-  if (flashCallback_) {
-    flashCallback_(enabled);
-  }
-}
-
 BLYNK_WRITE(V0) {
   if (param.asInt() == 1) {
     BlynkApp.handleCaptureCommand();
@@ -123,10 +116,6 @@ BLYNK_WRITE(V7) {
   if (param.asInt() == 1) {
     BlynkApp.handleSleepCommand();
   }
-}
-
-BLYNK_WRITE(V8) {
-  BlynkApp.handleFlashCommand(param.asInt() == 1);
 }
 
 BLYNK_WRITE(V9) {
