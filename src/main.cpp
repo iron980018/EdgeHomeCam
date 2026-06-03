@@ -4,19 +4,21 @@
 #include "app_state.h"
 #include "blynk_service.h"
 #include "camera_manager.h"
+#include "config_validator.h"
 #include "config.h"
 #include "power_manager.h"
+#include "rtc_manager.h"
 #include "upload_service.h"
 #include "wifi_manager.h"
 
 CameraManager camera;
 WifiManager wifi;
 PowerManager power;
+RtcManager rtc;
 UploadService uploader;
 
 volatile bool captureRequested = false;
 volatile bool sleepRequested = false;
-unsigned long commandWindowStartedAt = 0;
 bool cameraReady = false;
 
 void requestCapture() {
@@ -36,6 +38,11 @@ void setFlash(bool enabled) {
 }
 
 String isoTimestamp() {
+  String rtcTime = rtc.nowString();
+  if (rtcTime.length() > 0) {
+    return rtcTime;
+  }
+
   struct tm timeinfo;
   if (getLocalTime(&timeinfo, 500)) {
     char buffer[32];
@@ -59,9 +66,20 @@ CaptureResult captureAndUpload() {
   CaptureResult result;
   publishStatus(DeviceStatus::Capturing);
 
-  if (!cameraReady) {
-    result.errorCode = "CAMERA_INIT_FAILED";
+  String configError;
+  if (!ConfigValidator::hasRequiredCaptureConfig(configError)) {
+    result.errorCode = configError;
+    BlynkApp.publishError(configError);
     return result;
+  }
+
+  if (!cameraReady) {
+    cameraReady = camera.begin();
+    if (!cameraReady) {
+      result.errorCode = "CAMERA_INIT_FAILED";
+      BlynkApp.publishError(result.errorCode);
+      return result;
+    }
   }
 
   setFlash(true);
@@ -104,7 +122,31 @@ void setup() {
   Serial.println("EdgeCam booting");
 
   power.begin();
+  rtc.begin();
   BlynkApp.setCallbacks(requestCapture, requestSleep, requestReboot);
+
+#if RTC_ENABLED && ACTIVE_WINDOW_ENABLED && RTC_REQUIRED_FOR_ACTIVE_WINDOW
+  if (!rtc.isReady()) {
+    Serial.println("RTC required for active window but unavailable, powering down");
+    power.sleepNow(PERIODIC_WAKE_INTERVAL_SEC);
+  }
+
+  if (!rtc.hasValidTime()) {
+    Serial.println("RTC time invalid for active window, powering down");
+    power.sleepNow(PERIODIC_WAKE_INTERVAL_SEC);
+  }
+#endif
+
+  if (!rtc.isWithinActiveWindow()) {
+    Serial.println("Outside active window, powering down");
+    power.sleepNow(PERIODIC_WAKE_INTERVAL_SEC);
+  }
+
+  String configError;
+  if (!ConfigValidator::hasRequiredBootConfig(configError)) {
+    Serial.printf("Config invalid: %s\n", configError.c_str());
+    power.sleepNow(PERIODIC_WAKE_INTERVAL_SEC);
+  }
 
   if (power.isLowBattery()) {
     Serial.println("Low battery, sleeping");
@@ -120,26 +162,22 @@ void setup() {
   }
 
   configureTime();
-  cameraReady = camera.begin();
 
   if (!BlynkApp.begin()) {
     Serial.println("Blynk timeout");
+    power.sleepNow(PERIODIC_WAKE_INTERVAL_SEC);
   }
 
   BlynkApp.syncNeedPicture();
   BlynkApp.runFor(BLYNK_SYNC_TIMEOUT_MS);
   BlynkApp.publishTelemetry(power.batteryVoltage(), wifi.rssi());
 
-  if (!cameraReady) {
-    BlynkApp.publishError("CAMERA_INIT_FAILED");
-  }
-
-  if (AUTO_CAPTURE_ON_EXTERNAL_WAKE && power.wokeFromExternalPin()) {
-    captureRequested = true;
-  }
-
-  commandWindowStartedAt = millis();
   publishStatus(DeviceStatus::Idle);
+
+  if (SLEEP_WHEN_IDLE && !captureRequested) {
+    Serial.println("No picture requested, sleeping");
+    goToSleepSoon();
+  }
 }
 
 void loop() {
@@ -164,10 +202,6 @@ void loop() {
 
   if (sleepRequested) {
     sleepRequested = false;
-    goToSleepSoon();
-  }
-
-  if (SLEEP_WHEN_IDLE && millis() - commandWindowStartedAt > COMMAND_WINDOW_MS) {
     goToSleepSoon();
   }
 

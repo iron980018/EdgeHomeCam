@@ -5,7 +5,15 @@
 void PowerManager::begin() {
   pinMode(FLASH_LED_PIN, OUTPUT);
   digitalWrite(FLASH_LED_PIN, LOW);
+
+#if DEEP_SLEEP_EXT_WAKEUP_ENABLED
   pinMode(static_cast<uint8_t>(WAKEUP_PIN), INPUT_PULLUP);
+#endif
+
+#if EXTERNAL_POWER_CONTROL_ENABLED
+  pinMode(POWER_DONE_PIN, OUTPUT);
+  digitalWrite(POWER_DONE_PIN, LOW);
+#endif
 
 #if BATTERY_ADC_ENABLED
   analogReadResolution(12);
@@ -35,8 +43,13 @@ esp_sleep_wakeup_cause_t PowerManager::wakeupCause() const {
   return esp_sleep_get_wakeup_cause();
 }
 
-bool PowerManager::wokeFromExternalPin() const {
-  return wakeupCause() == ESP_SLEEP_WAKEUP_EXT0 || wakeupCause() == ESP_SLEEP_WAKEUP_EXT1;
+void PowerManager::finishAndPowerOff() {
+#if EXTERNAL_POWER_CONTROL_ENABLED
+  Serial.println("Signaling external power controller DONE");
+  digitalWrite(FLASH_LED_PIN, LOW);
+  digitalWrite(POWER_DONE_PIN, HIGH);
+  delay(POWER_DONE_SIGNAL_MS);
+#endif
 }
 
 void PowerManager::sleepNow(uint64_t seconds) {
@@ -44,7 +57,10 @@ void PowerManager::sleepNow(uint64_t seconds) {
   Serial.flush();
 
   digitalWrite(FLASH_LED_PIN, LOW);
+  finishAndPowerOff();
   esp_sleep_enable_timer_wakeup(seconds * 1000000ULL);
+#if DEEP_SLEEP_EXT_WAKEUP_ENABLED
   esp_sleep_enable_ext0_wakeup(WAKEUP_PIN, 0);
+#endif
   esp_deep_sleep_start();
 }

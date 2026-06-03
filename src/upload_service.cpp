@@ -1,7 +1,6 @@
 #include "upload_service.h"
 
 #include <ctype.h>
-#include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include "config.h"
 
@@ -13,24 +12,24 @@ bool UploadService::upload(camera_fb_t *frame, const String &capturedAt,
     return false;
   }
 
+  if (frame->len > TELEGRAM_MAX_PHOTO_BYTES) {
+    errorCode = "TELEGRAM_IMAGE_TOO_LARGE";
+    return false;
+  }
+
   WiFiClientSecure secureClient;
-  HTTPClient http;
 
 #if TELEGRAM_ALLOW_INSECURE_TLS
   secureClient.setInsecure();
 #endif
 
-  String url = telegramApiUrl();
-  if (!http.begin(secureClient, url)) {
-    errorCode = "TELEGRAM_BEGIN_FAILED";
+  secureClient.setTimeout(TELEGRAM_TIMEOUT_MS / 1000UL);
+  if (!secureClient.connect("api.telegram.org", 443)) {
+    errorCode = "TELEGRAM_CONNECT_FAILED";
     return false;
   }
 
-  http.setTimeout(TELEGRAM_TIMEOUT_MS);
-
   String boundary = "----EdgeCamBoundary7MA4YWxkTrZu0gW";
-  http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
-
   String head;
   head += "--" + boundary + "\r\n";
   head += "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n";
@@ -45,22 +44,27 @@ bool UploadService::upload(camera_fb_t *frame, const String &capturedAt,
   String tail = "\r\n--" + boundary + "--\r\n";
 
   size_t totalLength = head.length() + frame->len + tail.length();
-  uint8_t *body = static_cast<uint8_t *>(malloc(totalLength));
-  if (!body) {
-    http.end();
-    errorCode = "TELEGRAM_OUT_OF_MEMORY";
+  secureClient.print(String("POST /bot") + TELEGRAM_BOT_TOKEN + "/sendPhoto HTTP/1.1\r\n");
+  secureClient.print("Host: api.telegram.org\r\n");
+  secureClient.print(String("User-Agent: EdgeCam/") + FIRMWARE_VERSION + "\r\n");
+  secureClient.print("Connection: close\r\n");
+  secureClient.print("Content-Type: multipart/form-data; boundary=" + boundary + "\r\n");
+  secureClient.print("Content-Length: " + String(totalLength) + "\r\n\r\n");
+
+  secureClient.print(head);
+  size_t photoBytesWritten = secureClient.write(frame->buf, frame->len);
+  secureClient.print(tail);
+
+  if (photoBytesWritten != frame->len) {
+    secureClient.stop();
+    errorCode = "TELEGRAM_SEND_FAILED";
     return false;
   }
 
-  memcpy(body, head.c_str(), head.length());
-  memcpy(body + head.length(), frame->buf, frame->len);
-  memcpy(body + head.length() + frame->len, tail.c_str(), tail.length());
-
-  int code = http.POST(body, totalLength);
-  free(body);
-
-  String response = http.getString();
-  http.end();
+  String statusLine = secureClient.readStringUntil('\n');
+  int code = parseStatusCode(statusLine);
+  String response = readResponseBody(secureClient);
+  secureClient.stop();
 
   Serial.printf("Telegram response code: %d\n", code);
   Serial.println(response);
@@ -70,13 +74,14 @@ bool UploadService::upload(camera_fb_t *frame, const String &capturedAt,
     return false;
   }
 
+  if (response.indexOf("\"ok\":true") < 0) {
+    errorCode = "TELEGRAM_API_FAILED";
+    return false;
+  }
+
   String messageId = extractMessageId(response);
   imageUrl = messageId.length() > 0 ? String("telegram:message/") + messageId : "telegram:sent";
   return true;
-}
-
-String UploadService::telegramApiUrl() const {
-  return String("https://api.telegram.org/bot") + TELEGRAM_BOT_TOKEN + "/sendPhoto";
 }
 
 String UploadService::buildCaption(const String &capturedAt, float batteryVoltage,
@@ -94,6 +99,41 @@ String UploadService::buildCaption(const String &capturedAt, float batteryVoltag
   caption += " dBm\nFirmware: ";
   caption += FIRMWARE_VERSION;
   return caption;
+}
+
+int UploadService::parseStatusCode(const String &statusLine) const {
+  int firstSpace = statusLine.indexOf(' ');
+  if (firstSpace < 0 || firstSpace + 4 > statusLine.length()) {
+    return -1;
+  }
+
+  return statusLine.substring(firstSpace + 1, firstSpace + 4).toInt();
+}
+
+String UploadService::readResponseBody(WiFiClientSecure &client) const {
+  while (client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r" || line.length() == 0) {
+      break;
+    }
+  }
+
+  String body;
+  unsigned long startedAt = millis();
+  while (millis() - startedAt < TELEGRAM_TIMEOUT_MS) {
+    while (client.available()) {
+      body += static_cast<char>(client.read());
+      startedAt = millis();
+    }
+
+    if (!client.connected()) {
+      break;
+    }
+
+    delay(10);
+  }
+
+  return body;
 }
 
 String UploadService::extractMessageId(const String &body) const {

@@ -16,7 +16,7 @@ ESP32-CAM wake
   -> connect Wi-Fi
   -> connect Blynk
   -> sync V0 need_picture
-  -> if false: report status and sleep
+  -> if false: report status and sleep immediately
   -> if true:
        initialize camera
        turn on flash LED
@@ -38,11 +38,11 @@ ESP32-CAM wake
   -> TPL5110 power timer
   -> 5V boost converter
   -> ESP32-CAM
-  -> GPIO POWER_DONE_PIN, future
+  -> GPIO POWER_DONE_PIN
   -> TPL5110 DONE
 ```
 
-目前程式尚未加入 `POWER_DONE_PIN`。加入後，裝置完成任務時應拉高 DONE，讓 TPL5110 切斷整機電源。
+韌體已支援可選 `POWER_DONE_PIN`。啟用 `EXTERNAL_POWER_CONTROL_ENABLED` 後，裝置完成任務時會拉高 DONE，讓 TPL5110 或外部電源控制模組切斷整機電源。
 
 ## Firmware Modules
 
@@ -54,6 +54,8 @@ ESP32-CAM wake
 | Blynk | `src/blynk_service.*` | Blynk 連線、同步 `need_picture`、狀態回報 |
 | Telegram upload | `src/upload_service.*` | Telegram Bot `sendPhoto` multipart 上傳 |
 | Power | `src/power_manager.*` | GPIO 初始化、電池電壓、deep sleep |
+| RTC | `src/rtc_manager.*` | 可選 DS3231/PCF8523 時段守門 |
+| Config validation | `src/config_validator.*` | 檢查必要設定是否仍為預設值 |
 | Config | `include/config.h` | Wi-Fi、Blynk、Telegram、睡眠、GPIO 設定 |
 
 ## Blynk Interface
@@ -87,9 +89,11 @@ Fields:
 | `photo` | file | JPEG image from ESP32-CAM |
 | `caption` | string | Device ID, capture time, battery, RSSI, firmware version |
 
+Telegram upload streams the multipart body directly to the TLS socket. It does not allocate a second full-size copy of the JPEG in RAM.
+
 ## Current Power Behavior
 
-目前版本：
+目前版本若未啟用外部電源控制：
 
 ```text
 task complete
@@ -99,7 +103,7 @@ task complete
   -> ESP32 deep sleep
 ```
 
-長續航建議版本：
+啟用 `EXTERNAL_POWER_CONTROL_ENABLED` 後：
 
 ```text
 task complete
@@ -109,13 +113,28 @@ task complete
   -> TPL5110 cuts ESP32-CAM power
 ```
 
+## RTC Active Window
+
+可選 DS3231 或 PCF8523 RTC。啟用 `RTC_ENABLED` 與 `ACTIVE_WINDOW_ENABLED` 後，裝置醒來會先讀 RTC 時間：
+
+```text
+wake
+  -> rtc.begin
+  -> if outside 08:00-16:00:
+       power off / deep sleep immediately
+  -> if inside window:
+       continue Wi-Fi/Blynk flow
+```
+
+這是韌體層級的時段守門。若要硬體層級只在早上供電，需要 RTC alarm 另外接到外部電源控制或喚醒電路。
+
 ## Recommended Next Changes
 
 | Priority | Item | Reason |
 |---|---|---|
-| High | Add `POWER_DONE_PIN` support | 搭配 TPL5110 真正切斷 ESP32-CAM 電源，提升續航 |
-| High | Add config validation | 避免 Wi-Fi/Blynk/Telegram token 未填時反覆重試耗電 |
-| High | Reduce camera initialization when no picture needed | 若 `need_picture=false`，可不初始化相機，省醒來時間與電 |
+| High | Wire and test `POWER_DONE_PIN` with TPL5110 | 確認 DONE 腳能穩定切斷電源 |
+| High | Choose final RTC wiring | ESP32-CAM 可用 GPIO 少，需要確認不和相機/補光/喚醒腳衝突 |
+| High | Compile on PlatformIO | 本機目前未驗證編譯 |
 | Medium | Add Telegram response parsing for `ok=false` | Telegram HTTP 200 但 API 失敗時應回報更準確錯誤 |
 | Medium | Add battery ADC calibration | 目前電池電壓功能預設關閉，需要依分壓電阻校準 |
 | Medium | Add capture settings in config | 補光等待時間、畫質、解析度可集中調整 |
@@ -127,3 +146,4 @@ task complete
 - Deep sleep 期間無法即時接收 Blynk 指令；目前設計是醒來後同步雲端旗標。
 - `need_picture=true` 會保留到成功拍照並傳 Telegram 後才清除，失敗時下次醒來會再試。
 - 若使用 TPL5110，韌體不應只 deep sleep，而應拉高 DONE 讓外部電源切斷。
+- External wake does not bypass `need_picture`; the cloud flag remains the single capture authority.
