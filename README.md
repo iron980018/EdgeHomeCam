@@ -1,18 +1,20 @@
 # EdgeCam
 
-家用室外瓦斯錶邊緣照相機，使用 ESP32-CAM、Wi-Fi、Blynk 與 Telegram Bot。Blynk 負責手動觸發與狀態顯示，Telegram Bot 負責把拍攝照片直接傳到指定聊天室。
+家用室外瓦斯錶邊緣照相機，使用 ESP32-CAM、Wi-Fi、Blynk 與 Telegram Bot。Blynk 負責設定拍照需求與狀態顯示，Telegram Bot 負責把拍攝照片直接傳到指定聊天室。
 
 ## 目前功能
 
 - ESP32-CAM AI Thinker 相機初始化與 JPEG 拍照
-- Blynk Virtual Pin 手動拍照命令
+- Blynk `need_picture` 雲端旗標觸發拍照
 - Wi-Fi 連線、逾時與重試
 - Telegram Bot `sendPhoto` 圖片回傳
 - Telegram 圖片 caption 附帶裝置、時間、電池、RSSI、韌體版本
 - Blynk 狀態、Telegram 訊息標記、電池電壓、RSSI、錯誤碼回報
+- 拍照成功後自動將 `need_picture` 改回 `false`
+- 拍照或傳送失敗時保留 `need_picture=true`，下次醒來可再重試
 - 補光 LED 控制
 - Deep Sleep 低功耗模式
-- 定時喚醒後保留短暫線上等待命令視窗
+- 定時醒來後同步 Blynk 狀態
 - 本地按鍵/外部腳位喚醒後可自動拍照
 
 ## 開發環境
@@ -36,6 +38,17 @@ pio device monitor
 - 裝置 ID
 - 睡眠與重試參數
 
+## 操作流程
+
+1. 在 Blynk App 上把 `need_picture` 設為 `true`。
+2. ESP32-CAM 下一次醒來後連上 Wi-Fi 與 Blynk。
+3. 韌體執行 `Blynk.syncVirtual(V0)`，同步雲端 `need_picture` 值。
+4. 如果 `need_picture=true`，裝置拍照並用 Telegram Bot 傳送照片。
+5. Telegram 傳送成功後，裝置把 Blynk `need_picture` 寫回 `false`。
+6. 裝置回報狀態後進入 Deep Sleep。
+
+注意：ESP32-CAM 在 Deep Sleep 時無法即時收到 Blynk 命令。手機設定 `need_picture=true` 後，裝置會在下一次醒來時才處理。
+
 ## Telegram Bot 設定
 
 1. 在 Telegram 找 `@BotFather`。
@@ -53,18 +66,18 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getUpdates
 
 ## Blynk Virtual Pins
 
-| Pin | 方向 | 說明 |
-|---|---|---|
-| V0 | App -> Device | 拍照命令，送 `1` |
-| V1 | Device -> App | 裝置狀態 |
-| V2 | Device -> App | 上次拍照時間 |
-| V3 | Device -> App | Telegram 傳送結果，例如 `telegram:message/123` |
-| V4 | Device -> App | 電池電壓 |
-| V5 | Device -> App | Wi-Fi RSSI |
-| V6 | Device -> App | 錯誤碼 |
-| V7 | App -> Device | 立即睡眠，送 `1` |
-| V8 | App -> Device | 補光手動控制，`0`/`1` |
-| V9 | App -> Device | 重啟裝置，送 `1` |
+| Pin | 方向 | 名稱 | 說明 |
+|---|---|---|---|
+| V0 | App <-> Device | `need_picture` | App 設為 `1/true` 代表需要拍照；成功後裝置寫回 `0/false` |
+| V1 | Device -> App | `status` | 裝置狀態 |
+| V2 | Device -> App | `last_capture_at` | 上次拍照時間 |
+| V3 | Device -> App | `telegram_result` | Telegram 傳送結果，例如 `telegram:message/123` |
+| V4 | Device -> App | `battery_voltage` | 電池電壓 |
+| V5 | Device -> App | `wifi_rssi` | Wi-Fi RSSI |
+| V6 | Device -> App | `error_code` | 錯誤碼 |
+| V7 | App -> Device | `sleep_now` | 立即睡眠，送 `1` |
+| V8 | App -> Device | `flash_enabled` | 補光手動控制，`0`/`1` |
+| V9 | App -> Device | `reboot` | 重啟裝置，送 `1` |
 
 ## Telegram 接口格式
 
@@ -111,9 +124,12 @@ Firmware: 0.1.0
 
 ## 低功耗運作方式
 
-ESP32 深度睡眠時無法即時接收 Blynk 命令，所以第一版採用兩種模式：
+ESP32 深度睡眠時無法即時接收 Blynk 命令，所以第一版採用「雲端旗標」模式：
 
-- 定時醒來：每隔一段時間醒來連線，保留 `COMMAND_WINDOW_MS` 等待 App 命令，逾時睡眠。
-- 外部喚醒：按下本地按鍵或由外部電路喚醒後，可設定為立即拍照。
+- 使用者在 App 先把 `need_picture` 設為 `true`。
+- 裝置定時醒來並同步 Blynk `V0`。
+- 若 `V0=true`，拍照並傳 Telegram。
+- 成功後裝置將 `V0=false`。
+- 若 `V0=false`，等待短時間後回到睡眠。
 
-若需要「每月任意時間按 App 都能立刻拍照」，裝置必須常在線，或增加外部低功耗喚醒硬體。
+若需要更長續航，建議未來加入外部低功耗電源控制，讓 ESP32-CAM 在睡眠期間整機斷電。

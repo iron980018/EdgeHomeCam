@@ -25,8 +25,28 @@ void BlynkService::run() {
   }
 }
 
+void BlynkService::runFor(unsigned long durationMs) {
+  unsigned long startedAt = millis();
+  while (Blynk.connected() && millis() - startedAt < durationMs) {
+    Blynk.run();
+    delay(BLYNK_RUN_INTERVAL_MS);
+  }
+}
+
 bool BlynkService::connected() const {
   return Blynk.connected();
+}
+
+void BlynkService::syncNeedPicture() {
+  if (Blynk.connected()) {
+    Blynk.syncVirtual(V0);
+  }
+}
+
+void BlynkService::clearNeedPicture() {
+  if (Blynk.connected()) {
+    Blynk.virtualWrite(V0, 0);
+  }
 }
 
 void BlynkService::setCallbacks(CaptureCallback capture, SleepCallback sleep,

@@ -12,7 +12,10 @@ class BlynkService {
  public:
   bool begin();
   void run();
+  void runFor(unsigned long durationMs);
   bool connected() const;
+  void syncNeedPicture();
+  void clearNeedPicture();
   void setCallbacks(CaptureCallback capture, SleepCallback sleep, RebootCallback reboot,
                     FlashCallback flash);
   void publishStatus(DeviceStatus status);

@@ -92,7 +92,7 @@ CaptureResult captureAndUpload() {
 
 void goToSleepSoon() {
   publishStatus(DeviceStatus::Sleeping);
-  BlynkApp.run();
+  BlynkApp.runFor(BLYNK_FLUSH_BEFORE_SLEEP_MS);
   delay(SLEEP_AFTER_TASK_SEC * 1000UL);
   power.sleepNow(PERIODIC_WAKE_INTERVAL_SEC);
 }
@@ -126,6 +126,8 @@ void setup() {
     Serial.println("Blynk timeout");
   }
 
+  BlynkApp.syncNeedPicture();
+  BlynkApp.runFor(BLYNK_SYNC_TIMEOUT_MS);
   BlynkApp.publishTelemetry(power.batteryVoltage(), wifi.rssi());
 
   if (!cameraReady) {
@@ -148,6 +150,9 @@ void loop() {
     CaptureResult result = captureAndUpload();
     if (!result.success) {
       Serial.printf("Telegram delivery failed: %s\n", result.errorCode.c_str());
+    } else {
+      BlynkApp.clearNeedPicture();
+      BlynkApp.runFor(BLYNK_FLUSH_BEFORE_SLEEP_MS);
     }
 
     if (SLEEP_WHEN_IDLE) {

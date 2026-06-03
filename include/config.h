@@ -18,6 +18,8 @@
 // Blynk
 #define BLYNK_CONNECT_TIMEOUT_MS 15000UL
 #define BLYNK_RUN_INTERVAL_MS 10UL
+#define BLYNK_SYNC_TIMEOUT_MS 3000UL
+#define BLYNK_FLUSH_BEFORE_SLEEP_MS 1500UL
 
 // Telegram Bot photo delivery
 // 1. Create a bot with @BotFather and paste the token here.
